@@ -27,12 +27,12 @@ class export_product_with_inventory_file(models.TransientModel):
         #fp = StringIO()
         #workbook = xlsxwriter.Workbook(fp, {'in_memory': True})
         
-        filename = 'products_%s.xlsx'%(datetime.today().strftime("%Y_%m_%d_%H_%M_%S"))
+        filename = 'products_%s.xls'%(datetime.today().strftime("%Y_%m_%d_%H_%M_%S"))
         workbook = xlwt.Workbook()
         bold = xlwt.easyxf("font: bold on;")
         
 #         header_format_without_color = workbook.add_format({
-#             'border': 1,
+#             'border': 1,.xls
 #             'bold': True,
 #             'text_wrap': True,
 #             'valign': 'vcenter',
