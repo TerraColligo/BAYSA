@@ -5,7 +5,7 @@
             <field name="name">product.import.batch.form</field>
             <field name="model">product.import.batch</field>
             <field name="arch" type="xml">
-                <form string="Product Import Batch Form" create="false" edit="false">
+                <form string="Batch product import status Form" create="false" edit="false">
                     <header>
                     	<button string="Import Product" type="object" name="action_import_product_data" class="oe_highlight" attrs="{'invisible':[('state','=','imported')]}"/>
                     	<field name="state" widget="statusbar"/>
@@ -34,7 +34,7 @@
             <field name="name">product.import.batch.tree</field>
             <field name="model">product.import.batch</field>
             <field name="arch" type="xml">
-                <tree string="Product Import Batch Tree" create="false" edit="false">
+                <tree string="Batch product import status Tree" create="false" edit="false">
                     <field name="name"/>
                     <field name="create_date" />
                     <field name="state" />
@@ -42,7 +42,7 @@
             </field>
         </record>
         <record id="action_view_product_import_batch" model="ir.actions.act_window">
-            <field name="name">Product Import Batch</field>
+            <field name="name">Batch product import status</field>
             <field name="res_model">product.import.batch</field>
             <field name="view_type">form</field>
             <field name="view_mode">tree,form</field>
@@ -50,7 +50,7 @@
         </record>
         <menuitem id="main_action_view_product_import_batch"
         	parent="stock.menu_stock_inventory_control"
-        	name="Product Import Batch"
+        	name="Batch product import status"
         	action="action_view_product_import_batch"
         	groups="import_product_inventory.group_import_product_inventory"
         	sequence="150"/>
