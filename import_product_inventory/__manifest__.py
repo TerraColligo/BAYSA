@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
-{'name': 'Import product in Batch',
- 'version': '11.0.2',
- 'category': 'product',
+{'name': 'Import product in Batch odoo 11 EE',
+ 'version': '11.0.1.0.0',
+ 'category': 'other',
  'summary': 'With this module you can import product with product import batch',
  'depends': ['l10n_mx','l10n_mx_edi','sale_stock','purchase'],
  'author': "Terra Colligo",

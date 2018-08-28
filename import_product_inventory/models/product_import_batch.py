@@ -5,17 +5,42 @@ import logging
 from psycopg2 import IntegrityError
 from odoo.tools.safe_eval import safe_eval
 _logger = logging.getLogger(__name__)
+
+
+class ProductImportFail(models.Model):
+    _name = 'product.import.fail'
+    _rec_name = 'product_id'
+
+    product_id = fields.Many2one('product.product', string="Product")
+    fail_reason = fields.Char(string="Reason")
+    batch_id = fields.Many2one('product.import.batch', string="Batch")
+
+
+class ProductImporsuccess(models.Model):
+    _name = 'product.import.success'
+    _rec_name = 'product_id'
+
+    product_id = fields.Many2one('product.product', string="Product")
+    batch_id = fields.Many2one('product.import.batch', string="Batch")
+
+
 class ProductImportBatch(models.Model):
     _name = 'product.import.batch'
     _order = 'create_date desc'
     _inherit = ['mail.thread', 'mail.activity.mixin', 'portal.mixin']
-    
+
     name = fields.Char('Batch Name')
     data = fields.Text('Batch Data',default="{}")
     sheet_name = fields.Char('Sheet Name')
     state = fields.Selection([('pending','Pending'),('imported','Imported'),('failed','Failed')],string='Status',default='pending')
     inventory_option = fields.Selection([('ADD','ADD'),('SET','SET')],string="Inventory Option")
-    
+    import_fail_ids = fields.One2many('product.import.fail', 'batch_id', string="Failed Products")
+    import_success_ids = fields.One2many('product.import.success', 'batch_id', string="Imported Products")
+    imported = fields.Integer(string="Imported", default=0)
+    pending = fields.Integer(string="Pending", default=0)
+    failed = fields.Integer(string="Failed", default=0)
+
+
     @api.multi
     def action_import_product_data(self):
         product_obj = self.env['product.product']
@@ -31,14 +56,14 @@ class ProductImportBatch(models.Model):
         #To manange savepoiunt, we used ids instead of direct browsable record.
         ids = self.ids
         cr = self._cr
-        product_columns = ['id','categ_id/name','name','barcode','default_code','unit_of_measurement','uom_po_id','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
+        product_columns = ['id','categ_id/name','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
         category_mapping_dict = {}
         uom_mapping_dict = {}
         po_uom_mapping_dict = {}
         location_id_dict = {}
         company_id = self.env.user.company_id.id
         uid = self._uid
-        
+
         for batch_id in ids:
             try:
                 inventory_line_vals = {}
@@ -54,7 +79,7 @@ class ProductImportBatch(models.Model):
                 for product in data:
                     if not inventory_columns:
                         inventory_columns = list(set(product.keys())-set(product_columns))
-                    
+
                     category_name = product.get('categ_id/name')
                     uom_name = product.get('unit_of_measurement')
                     uom_po_name = product.get('uom_po_id')
@@ -63,6 +88,7 @@ class ProductImportBatch(models.Model):
                     customer_taxes = product.get('taxes_id')
                     #category_code = product.get('Cat Code')
                     default_code = product.get('default_code')
+                    weight = product.get('weight')
                     product_name = product.get('name')
                     product_type = product.get('type')
                     barcode = product.get('barcode')
@@ -80,17 +106,17 @@ class ProductImportBatch(models.Model):
                     category_id = category_mapping_dict.get(category_name)
                     if uom_name and uom_name not in uom_mapping_dict:
                         uom_exist = uom_obj.search([('name','=',uom_name)],limit=1)
-                        uom_mapping_dict.update({uom_name:uom_exist.id}) 
-                    uom_id = uom_mapping_dict.get(uom_name) 
+                        uom_mapping_dict.update({uom_name:uom_exist.id})
+                    uom_id = uom_mapping_dict.get(uom_name)
                     if uom_po_name and uom_po_name not in po_uom_mapping_dict:
                         po_uom_exist = uom_obj.search([('name','=',uom_po_name)],limit=1)
-                        po_uom_mapping_dict.update({uom_po_name:po_uom_exist.id}) 
-                    po_uom_id = po_uom_mapping_dict.get(uom_po_name) 
+                        po_uom_mapping_dict.update({uom_po_name:po_uom_exist.id})
+                    po_uom_id = po_uom_mapping_dict.get(uom_po_name)
                     route_ids = []
                     if routes:
                         for route_ext_id in routes.split(','):
                             route_ext_id = route_ext_id.strip()
-                            if route_ext_id not in route_mapping_dict: 
+                            if route_ext_id not in route_mapping_dict:
                                 route_record = self.env.ref(route_ext_id,False)
                                 if route_record and route_record._name=='stock.location.route':
                                     route_mapping_dict.update({route_ext_id:route_record.id})
@@ -111,7 +137,7 @@ class ProductImportBatch(models.Model):
                             sat_code = '0000' + str(sat_code)
                         sat_rec_id = self.env['l10n_mx_edi.product.sat.code'].search([('code', '=', sat_code)], limit=1).id
                         # sat_ext_id = sat_id.strip()
-                        # if sat_ext_id not in sat_mapping_dict: 
+                        # if sat_ext_id not in sat_mapping_dict:
                         #     sat_record = self.env.ref(sat_ext_id,False)
                         #     if sat_record and sat_record._name=='l10n_mx_edi.product.sat.code':
                         #         sat_mapping_dict.update({sat_ext_id:sat_record.id})
@@ -124,7 +150,7 @@ class ProductImportBatch(models.Model):
                             supplier_tax_ext_id = supplier_tax_ext_id.strip()
                             supplier_tax_ids = self.env['account.tax'].search([('type_tax_use', '=', 'sale'), ('name', '=', supplier_tax_ext_id)])
                             supplier_tax_ids = supplier_tax_ids.ids
-                            # if supplier_tax_ext_id not in supplier_tax_mapping_dict: 
+                            # if supplier_tax_ext_id not in supplier_tax_mapping_dict:
                             #     supplier_tax_record = self.env.ref(supplier_tax_ext_id,False)
                             #     if supplier_tax_record and supplier_tax_record._name=='account.tax':
                             #         supplier_tax_mapping_dict.update({supplier_tax_ext_id:supplier_tax_record.id})
@@ -139,7 +165,7 @@ class ProductImportBatch(models.Model):
                             customer_tax_ext_id = customer_tax_ext_id.strip()
                             customer_tax_ids = self.env['account.tax'].search([('type_tax_use', '=', 'purchase'), ('name', '=', customer_tax_ext_id)])
                             customer_tax_ids = customer_tax_ids.ids
-                            # if customer_tax_ext_id not in customer_tax_mapping_dict: 
+                            # if customer_tax_ext_id not in customer_tax_mapping_dict:
                             #     customer_tax_record = self.env.ref(customer_tax_ext_id,False)
                             #     if customer_tax_record and customer_tax_record._name=='account.tax':
                             #         customer_tax_mapping_dict.update({customer_tax_ext_id:customer_tax_record.id})
@@ -153,7 +179,7 @@ class ProductImportBatch(models.Model):
                     if sellers:
                         for seller_ext_id in sellers.split(','):
                             seller_ext_id = seller_ext_id.strip()
-                            if seller_ext_id not in sellers_mapping_dict: 
+                            if seller_ext_id not in sellers_mapping_dict:
                                 seller_record = self.env.ref(seller_ext_id,False)
                                 if seller_record and seller_record._name=='res.partner':
                                     sellers_mapping_dict.update({seller_ext_id:seller_record.id})
@@ -169,10 +195,11 @@ class ProductImportBatch(models.Model):
                     elif product_type == 'Stockable Product':
                         product_type = 'product'
                     if product_type not in ['consu','service','product']:
-                        product_type = 'product'    
+                        product_type = 'product'
                     product_vals = {
                         'name' : product_name,
                         'default_code' : default_code,
+                        'weight': weight,
                         'type' : product_type,
                         'categ_id' : category_id,
                         'barcode' : barcode,
@@ -198,7 +225,7 @@ class ProductImportBatch(models.Model):
                     product_exist=False
                     if external_id:
                         product_exist = self.env.ref(external_id,False)
-                    if not product_exist and default_code:    
+                    if not product_exist and default_code:
                         product_exist = product_obj.search([('default_code','=',default_code)],limit=1)
 
                     try:
@@ -207,6 +234,12 @@ class ProductImportBatch(models.Model):
                             product_exist.write(product_vals)
                         else:
                             product_exist = product_obj.create(product_vals)
+                        success_import__id = self.env['product.import.success'].create({
+                                'product_id': product_exist[0].id,
+                                'batch_id': batch_id
+                            })
+                        batch.imported = batch.imported + 1
+                        batch.pending = batch.pending - 1
                         self.get_create_xml_id(product_exist, external_id)
                         cr.execute('RELEASE SAVEPOINT model_batch_product_save')
                     except IntegrityError as e:
@@ -218,6 +251,12 @@ class ProductImportBatch(models.Model):
                                 product_exist.write(product_vals)
                             else:
                                 product_exist = product_obj.create(product_vals)
+                            success_import__id = self.env['product.import.success'].create({
+                                'product_id': product_exist[0].id,
+                                'batch_id': batch_id
+                            })
+                            batch.imported = batch.imported + 1
+                            batch.pending = batch.pending - 1
                             self.get_create_xml_id(product_exist, external_id)
                             cr.execute('RELEASE SAVEPOINT model_batch_product_save')
                     for column_name in inventory_columns:
@@ -232,7 +271,7 @@ class ProductImportBatch(models.Model):
                         if location_id and type(product_qty) in [float,int] and product_qty>=0: #and product_qty not in [None,False,'']
                             if location_id not in inventory_line_vals:
                                 inventory_line_vals.update({location_id:''})
-                            
+
                             #For faster create inventory.
                             cr.execute("select sum(quantity) from stock_quant where company_id=%d and location_id=%d and product_id=%d"%(company_id, location_id,product_exist.id))
                             theoretical_qty = cr.fetchone()
@@ -250,19 +289,25 @@ class ProductImportBatch(models.Model):
                                                             'name' : batch.name,
                                                             })
                                     location_id_inventory_dict.update({location_id:inventory_rec.id})
-                                line = "(nextval('stock_inventory_line_id_seq'),%d,(now() at time zone 'UTC'),%d,(now() at time zone 'UTC'),%f,%d,%d,%d,%d,%d,%f),"%(uid,uid, product_qty,location_id, company_id, location_id_inventory_dict.get(location_id), product_exist.id,product_exist.uom_id.id,theoretical_qty)    
+                                line = "(nextval('stock_inventory_line_id_seq'),%d,(now() at time zone 'UTC'),%d,(now() at time zone 'UTC'),%f,%d,%d,%d,%d,%d,%f),"%(uid,uid, product_qty,location_id, company_id, location_id_inventory_dict.get(location_id), product_exist.id,product_exist.uom_id.id,theoretical_qty)
                                 inventory_line_vals[location_id] += line
                             #inventory_line_vals[location_id].append({'product_id':product_exist.id, 'product_uom_id': product_exist.uom_id.id,'product_qty':product_qty, 'location_id':location_id})
                 if inventory_line_vals:
                     self.create_inventory(inventory_line_vals, location_id_inventory_dict)
-                                            
+
                 batch.write({'state':'imported'})
                 cr.execute('RELEASE SAVEPOINT model_batch_save')
             except Exception as e:
                 _logger.error(str(e))
                 cr.execute('ROLLBACK TO SAVEPOINT model_batch_save')
                 batch = self.browse(batch_id)
-                batch.write({'state':'failed'})
+                if product_exist:
+                    failed_import__id = self.env['product.import.fail'].create({
+                            'product_id': product_exist[0].id,
+                            'fail_reason': str(e),
+                            'batch_id': batch_id
+                        })
+                batch.write({'state':'failed', 'failed': batch.failed + 1, 'pending': batch.pending - 1})
                 batch.message_post(body=str(e))
         return True
     @api.model
@@ -279,13 +324,13 @@ class ProductImportBatch(models.Model):
             self._cr.execute("INSERT into stock_inventory_line(id,create_uid, create_date, write_uid, write_date, product_qty, location_id, company_id, inventory_id, product_id, product_uom_id, theoretical_qty) values%s"%inventory_vals)
             inventory_rec = inventory_obj.browse(inventory_id)
             inventory_rec.action_start()
-            #inventory_rec.action_done() instead of this method, called below methods. 
+            #inventory_rec.action_done() instead of this method, called below methods.
             inventory_rec.action_check()
             inventory_rec.write({'state': 'done'})
             inventory_rec.post_inventory()
-            
+
         return True
-    @api.model    
+    @api.model
     def get_create_xml_id(self,record, external_id):
         """ Return a valid xml_id for the record ``self``. """
         if external_id:
@@ -302,7 +347,7 @@ class ProductImportBatch(models.Model):
                     self._cr.execute("delete from ir_model_data where id=%d"%(data.get('id')))
                     #data[0].unlink()
                 else:
-                    return existing_external_id 
+                    return existing_external_id
             external_ids = external_id.split('.')
             if len(external_ids)>1:
                 name = '.'.join(external_ids[1:])
@@ -312,8 +357,8 @@ class ProductImportBatch(models.Model):
                 module = ''
             uid = self._uid
             #TO Faster add record directly executed query.
-            self._cr.execute("""insert into ir_model_data(id,create_uid,create_date, write_date, write_uid, name, module, model, res_id) 
-            values(nextval('ir_model_data_id_seq'),%d,(now() at time zone 'UTC'),(now() at time zone 'UTC'),%d, '%s','%s','%s',%d)"""%(uid,uid,name,module,record._name,record.id))            
+            self._cr.execute("""insert into ir_model_data(id,create_uid,create_date, write_date, write_uid, name, module, model, res_id)
+            values(nextval('ir_model_data_id_seq'),%d,(now() at time zone 'UTC'),(now() at time zone 'UTC'),%d, '%s','%s','%s',%d)"""%(uid,uid,name,module,record._name,record.id))
 #             ir_model_data.create({
 #                 'model': record._name,
 #                 'res_id': record.id,
@@ -321,9 +366,9 @@ class ProductImportBatch(models.Model):
 #                 'name': name,
 #             })
             return module+'.' + name
-        
+
     @api.model
     def import_batch_product_data(self):
         batches = self.search([('state','=','pending')],limit=1,order='create_date')
-        batches.action_import_product_data()                
+        batches.action_import_product_data()
         return True

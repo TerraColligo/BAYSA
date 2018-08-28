@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+   <record id="view_purchase_inherit_form"  model="ir.ui.view">
+        <field name="name">purchase.inherit.form</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <data>
+                  <xpath expr="/form/sheet/notebook/page/field[@name='order_line']/tree/field[@name='product_qty']" position="after">
+            <field name="weight_po"/>
+        </xpath>
+            </data>
+        </field>
+    </record>
+
+
+
+ <record id="view_purchase_inherit_form_new"  model="ir.ui.view">
+        <field name="name">purchase.form</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <data>
+                <field name="amount_untaxed" position="before">
+                     <div class="row">
+    <div class="col-sm-8">
+        <p><b>Total Weight</b></p>
+    </div>
+    <div class="col-sm-4">
+        <p><b><field name="total_weight_po"/></b></p>
+    </div>
+  </div>
+
+                </field>
+
+            </data>
+        </field>
+    </record>
+
+
+</odoo>
