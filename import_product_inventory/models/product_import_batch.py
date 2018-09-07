@@ -3,6 +3,8 @@ from odoo import models,fields, api
 import json
 import logging
 from psycopg2 import IntegrityError
+from datetime import datetime
+from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
 from odoo.tools.safe_eval import safe_eval
 _logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ class ProductImportBatch(models.Model):
     imported = fields.Integer(string="Imported", default=0)
     pending = fields.Integer(string="Pending", default=0)
     failed = fields.Integer(string="Failed", default=0)
+    consumed_time = fields.Char(string="Consumed Time")
 
 
     @api.multi
@@ -65,6 +68,7 @@ class ProductImportBatch(models.Model):
         uid = self._uid
 
         for batch_id in ids:
+            start_datetime = datetime.strptime(str(fields.Datetime.now()), DEFAULT_SERVER_DATETIME_FORMAT)
             try:
                 inventory_line_vals = {}
                 location_id_inventory_dict = {}
@@ -227,7 +231,6 @@ class ProductImportBatch(models.Model):
                         product_exist = self.env.ref(external_id,False)
                     if not product_exist and default_code:
                         product_exist = product_obj.search([('default_code','=',default_code)],limit=1)
-
                     try:
                         cr.execute('SAVEPOINT model_batch_product_save')
                         if product_exist:
@@ -268,7 +271,7 @@ class ProductImportBatch(models.Model):
                         location_id = location_id_dict.get(code)
                         if product_qty and type(product_qty) in [str,bytes]:
                             product_qty = safe_eval(product_qty)
-                        if location_id and type(product_qty) in [float,int] and product_qty>=0: #and product_qty not in [None,False,'']
+                        if location_id and type(product_qty) in [float,int]: # and product_qty>=0: #and product_qty not in [None,False,'']
                             if location_id not in inventory_line_vals:
                                 inventory_line_vals.update({location_id:''})
 
@@ -294,8 +297,8 @@ class ProductImportBatch(models.Model):
                             #inventory_line_vals[location_id].append({'product_id':product_exist.id, 'product_uom_id': product_exist.uom_id.id,'product_qty':product_qty, 'location_id':location_id})
                 if inventory_line_vals:
                     self.create_inventory(inventory_line_vals, location_id_inventory_dict)
-
-                batch.write({'state':'imported'})
+                end_datetime = datetime.strptime(str(fields.Datetime.now()), DEFAULT_SERVER_DATETIME_FORMAT)
+                batch.write({'state':'imported', 'consumed_time': (end_datetime - start_datetime)})
                 cr.execute('RELEASE SAVEPOINT model_batch_save')
             except Exception as e:
                 _logger.error(str(e))
@@ -307,7 +310,8 @@ class ProductImportBatch(models.Model):
                             'fail_reason': str(e),
                             'batch_id': batch_id
                         })
-                batch.write({'state':'failed', 'failed': batch.failed + 1, 'pending': batch.pending - 1})
+                end_datetime = datetime.strptime(str(fields.Datetime.now()), DEFAULT_SERVER_DATETIME_FORMAT)
+                batch.write({'state':'failed', 'failed': batch.failed + 1, 'pending': batch.pending - 1, 'consumed_time': (end_datetime - start_datetime)})
                 batch.message_post(body=str(e))
         return True
     @api.model

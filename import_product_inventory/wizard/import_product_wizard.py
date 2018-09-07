@@ -81,8 +81,6 @@ class import_product_from_file(models.TransientModel):
             if rows:
                 index = 1
                 for split_rows in self.split_rows(rows,500):
-                    print ("\n\n json.dumps(split_rows) : ",len(json.dumps(split_rows)))
-                    print ("\n\n DATA : ",len(split_rows))
                     import_batch_obj.create({'inventory_option':self.inventory_option,'name':sheet_name+' '+str(index),'sheet_name':sheet_name+' '+str(index),'state':'pending','data':json.dumps(split_rows), 'pending': len(split_rows)})
                     index += 1
         if result:

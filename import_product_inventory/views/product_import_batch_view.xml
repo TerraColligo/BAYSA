@@ -15,6 +15,7 @@
                             <group>
                                 <field name="name" readonly="1"/>
                                 <field name="inventory_option" readonly="1"/>
+                                <field name="consumed_time" readonly="1"/>
                             </group>
                             <group>
                                 <field name="create_date" readonly="1"/>
@@ -58,6 +59,8 @@
             <field name="arch" type="xml">
                 <tree string="Batch product import status Tree" create="false" edit="false">
                     <field name="name"/>
+                    <field name="inventory_option"/>
+                    <field name="consumed_time"/>
                     <field name="create_date" />
                     <field name="pending" />
                     <field name="imported" />
