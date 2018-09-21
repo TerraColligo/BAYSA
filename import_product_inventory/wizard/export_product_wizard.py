@@ -18,7 +18,7 @@ class export_product_with_inventory_file(models.TransientModel):
     def export_products(self):
         filename = 'products_%s.xls'%(datetime.today().strftime("%Y_%m_%d_%H_%M_%S"))
         workbook = xlwt.Workbook()
-        bold = xlwt.easyxf("font: bold on;")
+        bold = xlwt.easyxf("font: bold on;") # "cell_locked true" is default
 
         quant_obj = self.env['stock.quant']
         products = self.env['product.product'].search([])
@@ -26,16 +26,22 @@ class export_product_with_inventory_file(models.TransientModel):
 
         #worksheet = workbook.add_worksheet('Products')
         worksheet = workbook.add_sheet('Products')
-
+        worksheet.protect = True
+        
+        editable = xlwt.easyxf("protection: cell_locked false;")
+        
         headers = ['id','categ_id/name','pos_categ_id/name','available_in_pos','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
         warehouse_ids = []
+        location_ids = []
+        wh_location_ids = []
         product_obj = self.env['product.product']
         product_ids = products.ids
         product_inventory_by_wh = {}
+        product_inventory_by_location = {}
         for warehouse in self.env['stock.warehouse'].search([('company_id','=',company_id)]):
-            headers.append(warehouse.code)
+            headers.append('[WH]'+warehouse.code)
             #For faster quantity calculation, used quary.
-            domain_quant_loc, domain_move_in_loc, domain_move_out_loc = product_obj._get_domain_locations_new([warehouse.view_location_id.id])
+            domain_quant_loc, domain_move_in_loc, domain_move_out_loc = product_obj._get_domain_locations_new([warehouse.lot_stock_id.id])
             domain_quant = [('product_id', 'in', product_ids)] + domain_quant_loc
             query = quant_obj._where_calc(domain_quant)
             from_clause, where_clause, where_clause_params = query.get_sql()
@@ -46,6 +52,24 @@ class export_product_with_inventory_file(models.TransientModel):
             res = dict(self._cr.fetchall())
             product_inventory_by_wh.update({warehouse.id:res})
             warehouse_ids.append(warehouse.id)
+            wh_location_ids.append(warehouse.lot_stock_id)
+            
+        for location in self.env['stock.location'].search([('company_id','=',company_id), ('usage', '=', 'internal')]):
+            if location.id in wh_location_ids:
+                continue
+            headers.append('[LOC]'+location.display_name)
+            #For faster quantity calculation, used quary.
+            domain_quant_loc, domain_move_in_loc, domain_move_out_loc = product_obj._get_domain_locations_new([location.id])
+            domain_quant = [('product_id', 'in', product_ids)] + domain_quant_loc
+            query = quant_obj._where_calc(domain_quant)
+            from_clause, where_clause, where_clause_params = query.get_sql()
+            where_str = where_clause and (" WHERE %s" % where_clause) or ''
+
+            query_str = 'SELECT product_id, sum(quantity) as quantity FROM '+ from_clause + where_str + ' group by product_id'
+            self._cr.execute(query_str, where_clause_params)
+            res = dict(self._cr.fetchall())
+            product_inventory_by_location.update({location.id:res})
+            location_ids.append(location.id)
 
         product_xml_ids = dict(self.__ensure_xml_id_custom(products))
         sellers_mapping_dict = {}
@@ -89,51 +113,51 @@ class export_product_with_inventory_file(models.TransientModel):
             else:
                 l10n_mx_edi_code_sat_id = ''
             i=0
-            worksheet.write(row_index, i, product_xml_ids.get(product.id))
+            worksheet.write(row_index, i, product_xml_ids.get(product.id),editable)
             i +=1
-            worksheet.write(row_index, i, product.categ_id.complete_name)
+            worksheet.write(row_index, i, product.categ_id.complete_name, editable)
             i +=1
             #########
             if pos_installed:
-                worksheet.write(row_index, i, product.pos_categ_id.complete_categ_name or None)
+                worksheet.write(row_index, i, product.pos_categ_id.complete_categ_name or None, editable)
                 i +=1
-                worksheet.write(row_index, i, 1 if product.available_in_pos else 0)
+                worksheet.write(row_index, i, 1 if product.available_in_pos else 0, editable)
                 i +=1
             else:
-                worksheet.write(row_index, i, None)
+                worksheet.write(row_index, i, None, editable)
                 i +=1
-                worksheet.write(row_index, i, None)
+                worksheet.write(row_index, i, None, editable)
                 i +=1
             #########
-            worksheet.write(row_index, i, product.name)
+            worksheet.write(row_index, i, product.name, editable)
             i +=1
-            worksheet.write(row_index, i, product.barcode or '')
+            worksheet.write(row_index, i, product.barcode or '', editable)
             i +=1
-            worksheet.write(row_index, i, product.default_code or '')
+            worksheet.write(row_index, i, product.default_code or '', editable)
             i +=1
-            worksheet.write(row_index, i, product.uom_id.name)
+            worksheet.write(row_index, i, product.uom_id.name, editable)
             i +=1
-            worksheet.write(row_index, i, product.uom_po_id.name)
+            worksheet.write(row_index, i, product.uom_po_id.name, editable)
             i +=1
-            worksheet.write(row_index, i, product.weight or 0.0)
+            worksheet.write(row_index, i, product.weight or 0.0, editable)
             i +=1
-            worksheet.write(row_index, i, product.l10n_mx_edi_code_sat_id.code)
+            worksheet.write(row_index, i, product.l10n_mx_edi_code_sat_id.code, editable)
             i +=1
-            worksheet.write(row_index, i, supplier_taxes_ids)
+            worksheet.write(row_index, i, supplier_taxes_ids, editable)
             i +=1
-            worksheet.write(row_index, i, customer_taxes_ids)
+            worksheet.write(row_index, i, customer_taxes_ids, editable)
             i +=1
-            worksheet.write(row_index, i, product.type)
+            worksheet.write(row_index, i, product.type, editable)
             i +=1
-            worksheet.write(row_index, i, route_ids)
+            worksheet.write(row_index, i, route_ids, editable)
             i +=1
-            worksheet.write(row_index, i, product.purchase_ok)
+            worksheet.write(row_index, i, product.purchase_ok, editable)
             i +=1
-            worksheet.write(row_index, i, product.sale_ok)
+            worksheet.write(row_index, i, product.sale_ok, editable)
             i +=1
-            worksheet.write(row_index, i, product.standard_price)
+            worksheet.write(row_index, i, product.standard_price, editable)
             i +=1
-            worksheet.write(row_index, i, product.lst_price)
+            worksheet.write(row_index, i, product.lst_price, editable)
             i +=1
             seller_xml_ids = []
             for seller in product.seller_ids.mapped('name'):
@@ -143,13 +167,22 @@ class export_product_with_inventory_file(models.TransientModel):
                         sellers_mapping_dict.update({seller.id: xml_rec and xml_rec[0][1] or False})
                 seller_xml_ids.append(sellers_mapping_dict.get(seller.id) or '')
 
-            worksheet.write(row_index, i, ','.join(seller_xml_ids))
+            worksheet.write(row_index, i, ','.join(seller_xml_ids), editable)
             i +=1
 
             for warehouse_id in warehouse_ids:
-                worksheet.write(row_index, i, product_inventory_by_wh[warehouse_id].get(product.id,0.0))
+                worksheet.write(row_index, i, product_inventory_by_wh[warehouse_id].get(product.id,0.0), editable)
                 #worksheet.write(row_index, i, product.with_context(warehouse=warehouse_id).qty_available)
                 i +=1
+            
+            for location_id in location_ids:
+                worksheet.write(row_index, i, product_inventory_by_location[location_id].get(product.id,0.0), editable)
+                #worksheet.write(row_index, i, product.with_context(warehouse=warehouse_id).qty_available)
+                i +=1
+            row_index += 1
+        for i in range(row_index,row_index+5000):
+            for h,header in enumerate(headers): 
+                worksheet.write(row_index, h, None, editable)
             row_index += 1
 #         workbook.close()
 #         fp.seek(0)

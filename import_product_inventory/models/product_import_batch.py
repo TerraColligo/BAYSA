@@ -65,8 +65,11 @@ class ProductImportBatch(models.Model):
         #category_mapping_dict = {}
         uom_mapping_dict = {}
         po_uom_mapping_dict = {}
-        location_id_dict = {}
         company_id = self.env.user.company_id.id
+        
+        location_id_dict = dict((location.display_name,location.id) for location in self.env['stock.location'].search([('company_id','=',company_id), ('usage', '=', 'internal')]))
+        location_wh_id_dict = dict((warehouse.code,warehouse.id) for warehouse in warehouse_obj.search([('company_id','=',company_id)]))
+        
         uid = self._uid
         category_mapping_dict = dict((c.complete_name,c.id) for c in category_obj.search([]))
         pos_category_mapping_dict = dict((c.complete_categ_name,c.id) for c in pos_category_obj.search([]))
@@ -77,6 +80,7 @@ class ProductImportBatch(models.Model):
                 inventory_line_vals = {}
                 location_id_inventory_dict = {}
                 inventory_columns = []
+                inventory_columns_wh = []
                 batch = self.browse(batch_id)
                 inventory_option = batch.inventory_option
                 cr.execute('SAVEPOINT model_batch_save')
@@ -87,6 +91,8 @@ class ProductImportBatch(models.Model):
                 for product in data:
                     if not inventory_columns:
                         inventory_columns = list(set(product.keys())-set(product_columns))
+                        inventory_columns_wh = filter(lambda x: x.startswith('[WH]'), inventory_columns)
+                        inventory_columns = filter(lambda x: x.startswith('[LOC]'), inventory_columns)
 
                     category_name = product.get('categ_id/name')
                     pos_category_name = product.get('pos_categ_id/name')
@@ -345,13 +351,51 @@ class ProductImportBatch(models.Model):
                             batch.pending = batch.pending - 1
                             self.get_create_xml_id(product_exist, external_id)
                             cr.execute('RELEASE SAVEPOINT model_batch_product_save')
+                    if product_exist and product_exist.type!='product':
+                        continue
                     for column_name in inventory_columns:
                         product_qty = product.get(column_name)
-                        code = column_name.strip()
-                        if code not in location_id_dict:
-                            warehouse = warehouse_obj.search([('code','=',code),('company_id','=',company_id)],limit=1)
-                            location_id_dict.update({code:warehouse.lot_stock_id.id})
+                        column_name = column_name[5:]
+                        
+                        code = column_name #.strip()
+#                         if code not in location_id_dict:
+#                             warehouse = warehouse_obj.search([('code','=',code),('company_id','=',company_id)],limit=1)
+#                             location_id_dict.update({code:warehouse.lot_stock_id.id})
                         location_id = location_id_dict.get(code)
+                        if product_qty and type(product_qty) in [str,bytes]:
+                            product_qty = safe_eval(product_qty)
+                        if location_id and type(product_qty) in [float,int]: # and product_qty>=0: #and product_qty not in [None,False,'']
+                            if location_id not in inventory_line_vals:
+                                inventory_line_vals.update({location_id:''})
+
+                            #For faster create inventory.
+                            cr.execute("select sum(quantity) from stock_quant where company_id=%d and location_id=%d and product_id=%d"%(company_id, location_id,product_exist.id))
+                            theoretical_qty = cr.fetchone()
+                            theoretical_qty = theoretical_qty and theoretical_qty[0] or None
+                            if theoretical_qty and inventory_option=='ADD':
+                                product_qty += theoretical_qty
+                            if theoretical_qty==None:
+                                #if theoretical_qty==None:
+                                theoretical_qty=0.0
+                            if theoretical_qty!=product_qty:
+                                if location_id not in location_id_inventory_dict:
+                                    inventory_rec = inventory_obj.create({
+                                                            'location_id':location_id,
+                                                            'filter':'partial',
+                                                            'name' : batch.name,
+                                                            })
+                                    location_id_inventory_dict.update({location_id:inventory_rec.id})
+                                line = "(nextval('stock_inventory_line_id_seq'),%d,(now() at time zone 'UTC'),%d,(now() at time zone 'UTC'),%f,%d,%d,%d,%d,%d,%f),"%(uid,uid, product_qty,location_id, company_id, location_id_inventory_dict.get(location_id), product_exist.id,product_exist.uom_id.id,theoretical_qty)
+                                inventory_line_vals[location_id] += line
+                    for column_name in inventory_columns_wh:
+                        product_qty = product.get(column_name)
+                        column_name = column_name[4:]
+                        
+                        code = column_name.strip()
+                        if code not in location_wh_id_dict:
+                            warehouse = warehouse_obj.search([('code','=',code),('company_id','=',company_id)],limit=1)
+                            location_wh_id_dict.update({code:warehouse.lot_stock_id.id})
+                        location_id = location_wh_id_dict.get(code)
                         if product_qty and type(product_qty) in [str,bytes]:
                             product_qty = safe_eval(product_qty)
                         if location_id and type(product_qty) in [float,int]: # and product_qty>=0: #and product_qty not in [None,False,'']
