@@ -51,6 +51,8 @@ class ProductImportBatch(models.Model):
         uom_obj = self.env['product.uom']
         warehouse_obj = self.env['stock.warehouse']
         inventory_obj = self.env['stock.inventory']
+        pos_category_obj = self.env['pos.category']
+        
         route_mapping_dict = {}
         supplier_tax_mapping_dict = {}
         customer_tax_mapping_dict = {}
@@ -60,13 +62,15 @@ class ProductImportBatch(models.Model):
         ids = self.ids
         cr = self._cr
         product_columns = ['id','categ_id/name','pos_categ_id/name','available_in_pos','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
-        category_mapping_dict = {}
+        #category_mapping_dict = {}
         uom_mapping_dict = {}
         po_uom_mapping_dict = {}
         location_id_dict = {}
         company_id = self.env.user.company_id.id
         uid = self._uid
-
+        category_mapping_dict = dict((c.complete_name,c.id) for c in category_obj.search([]))
+        pos_category_mapping_dict = dict((c.complete_categ_name,c.id) for c in pos_category_obj.search([]))
+        
         for batch_id in ids:
             start_datetime = datetime.strptime(str(fields.Datetime.now()), DEFAULT_SERVER_DATETIME_FORMAT)
             try:
@@ -326,7 +330,7 @@ class ProductImportBatch(models.Model):
                         cr.execute('RELEASE SAVEPOINT model_batch_product_save')
                     except IntegrityError as e:
                         cr.execute('ROLLBACK TO SAVEPOINT model_batch_product_save')
-                        if 'duplicate key value violates unique constraint "product_product_barcode_uniq"' in e.message:
+                        if hasattr(e,"pgerror") and 'duplicate key value violates unique constraint "product_product_barcode_uniq"' in e.pgerror:
                             cr.execute('SAVEPOINT model_batch_product_save')
                             product_vals.pop('barcode')
                             if product_exist:
