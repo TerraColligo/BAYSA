@@ -59,7 +59,7 @@ class ProductImportBatch(models.Model):
         #To manange savepoiunt, we used ids instead of direct browsable record.
         ids = self.ids
         cr = self._cr
-        product_columns = ['id','categ_id/name','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
+        product_columns = ['id','categ_id/name','pos_categ_id/name','available_in_pos','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
         category_mapping_dict = {}
         uom_mapping_dict = {}
         po_uom_mapping_dict = {}
@@ -85,6 +85,8 @@ class ProductImportBatch(models.Model):
                         inventory_columns = list(set(product.keys())-set(product_columns))
 
                     category_name = product.get('categ_id/name')
+                    pos_category_name = product.get('pos_categ_id/name')
+                    available_in_pos = product.get('available_in_pos')
                     uom_name = product.get('unit_of_measurement')
                     uom_po_name = product.get('uom_po_id')
                     sat_id = product.get('l10n_mx_edi_code_sat_id')
@@ -102,12 +104,86 @@ class ProductImportBatch(models.Model):
                     standard_price = product.get('standard_price')
                     lst_price = product.get('lst_price')
                     external_id = product.get('external_id','') or product.get('id','')
-                    if category_name not in category_mapping_dict:
-                        category_exist = category_obj.search([('name','=',category_name)],limit=1)
-                        if not category_exist:
-                            category_exist = category_obj.create({'name':category_name}) #,'category_code':category_code
-                        category_mapping_dict.update({category_name:category_exist.id})
+                    
+                    if category_name and category_name not in category_mapping_dict:
+                        categories = category_name.split(" / ")
+                        #categories = list(map(str.strip, categories))
+                        new_categ_list = categories[:-1]
+                        
+                        top_category = categories[0]
+                        exist_top_categories = category_obj.search([('name','=',top_category),('parent_id','=',False)])
+                        if not exist_top_categories:
+                            exist_top_categories = category_obj.create({'name':top_category})
+                        top_path_exist = exist_top_categories.filtered(lambda x:x.complete_name==category_name)
+                        if top_path_exist:
+                            category_mapping_dict.update({top_path_exist[0].complete_name:top_path_exist[0].id})
+                        else:    
+                            path_exist = False
+                            existed_all_child_categories = category_obj.search([('id','child_of', exist_top_categories.ids)])
+                            while new_categ_list:
+                                categ_path = " / ".join(new_categ_list)
+                                #path_exist = category_obj.search([('id','child_of', exist_top_categories.ids)]).filtered(lambda x:x.complete_name==categ_path)
+                                path_exist = existed_all_child_categories.filtered(lambda x:x.complete_name==categ_path)
+                                if path_exist:
+                                    path_exist = path_exist[0]
+                                    break
+                                new_categ_list = new_categ_list[:-1]
+                            if not path_exist:
+                                path_exist = exist_top_categories[0]
+                                
+                            parent_categ = path_exist
+                            exist_category = parent_categ 
+                            for cat in categories[len(path_exist.complete_name.split(" / ")):]:
+                                exist_category = category_obj.create({'name':cat,'parent_id':parent_categ.id})
+                                parent_categ = exist_category
+                                if exist_category.complete_name not in category_mapping_dict:
+                                    category_mapping_dict.update({exist_category.complete_name:exist_category.id})
+                            else:
+                                category_mapping_dict.update({category_name:exist_category.id})
+#                     if category_name not in category_mapping_dict:
+#                         category_exist = category_obj.search([('name','=',category_name)],limit=1)
+#                         if not category_exist:
+#                             category_exist = category_obj.create({'name':category_name}) #,'category_code':category_code
+#                         category_mapping_dict.update({category_name:category_exist.id})
                     category_id = category_mapping_dict.get(category_name)
+                    
+                    if pos_category_name and pos_category_name not in pos_category_mapping_dict:
+                        pos_categories = pos_category_name.split(" / ")
+                        pos_categories = list(map(str.strip, pos_categories))
+                        pos_new_categ_list = pos_categories[:-1]
+                        
+                        pos_top_category = pos_categories[0]
+                        exist_pos_top_categories = pos_category_obj.search([('name','=',pos_top_category),('parent_id','=',False)])
+                        if not exist_pos_top_categories:
+                            exist_pos_top_categories = pos_category_obj.create({'name':pos_top_category})
+                        top_pos_path_exist = exist_pos_top_categories.filtered(lambda x:x.complete_categ_name==pos_category_name)
+                        if top_pos_path_exist:
+                            pos_category_mapping_dict.update({top_pos_path_exist[0].complete_categ_name:top_pos_path_exist[0].id})
+                        else:    
+                            path_exist = False
+                            existed_pos_all_child_categories = pos_category_obj.search([('id','child_of', exist_pos_top_categories.ids)])
+                            while pos_new_categ_list:
+                                categ_path = " / ".join(pos_new_categ_list)
+                                path_exist = existed_pos_all_child_categories.filtered(lambda x:x.complete_categ_name==categ_path)
+                                if path_exist:
+                                    path_exist = path_exist[0]
+                                    break
+                                pos_new_categ_list = pos_new_categ_list[:-1]
+                            if not path_exist:
+                                path_exist = exist_pos_top_categories[0]
+                                
+                            parent_categ = path_exist
+                            exist_category = parent_categ 
+                            for cat in pos_categories[len(path_exist.complete_categ_name.split(" / ")):]:
+                                exist_category = pos_category_obj.create({'name':cat,'parent_id':parent_categ.id})
+                                parent_categ = exist_category
+                                if exist_category.complete_categ_name not in pos_category_mapping_dict:
+                                    pos_category_mapping_dict.update({exist_category.complete_categ_name:exist_category.id})
+                            else:
+                                pos_category_mapping_dict.update({pos_category_name:exist_category.id})
+                    
+                    pos_category_id = pos_category_mapping_dict.get(pos_category_name)  
+                    
                     if uom_name and uom_name not in uom_mapping_dict:
                         uom_exist = uom_obj.search([('name','=',uom_name)],limit=1)
                         uom_mapping_dict.update({uom_name:uom_exist.id})
@@ -211,7 +287,10 @@ class ProductImportBatch(models.Model):
                         'sale_ok' : sale_ok,
                         'standard_price' : standard_price,
                         'lst_price' : lst_price,
+                        'available_in_pos' : available_in_pos,
                         }
+                    if pos_category_id:
+                        product_vals.update({'pos_categ_id' : pos_category_id})
                     if route_ids:
                         product_vals.update({'route_ids' : [(6,0,route_ids)]})
                     if sat_rec_id:

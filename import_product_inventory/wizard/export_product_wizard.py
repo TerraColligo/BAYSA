@@ -2,16 +2,12 @@
 from odoo import models,api,fields
 from odoo.exceptions import Warning
 from datetime import datetime
-#from cStringIO import StringIO
+
 import uuid
 import io
 from odoo.tools.misc import xlwt
 from itertools import product
 import base64
-# try:
-#     import xlsxwriter
-# except ImportError:
-#     xlsxwriter = None
 
 class export_product_with_inventory_file(models.TransientModel):
     _name ='export.product.with.inventory.file'
@@ -20,24 +16,10 @@ class export_product_with_inventory_file(models.TransientModel):
 
     @api.multi
     def export_products(self):
-
-#         if xlsxwriter==None:
-#             raise Warning(_("Unable to load Python module \"{modname}\" \n Install it by command : sudo pip install xlsxwriter").format(modname='xlsxwriter'))
-
-        #fp = StringIO()
-        #workbook = xlsxwriter.Workbook(fp, {'in_memory': True})
-
         filename = 'products_%s.xls'%(datetime.today().strftime("%Y_%m_%d_%H_%M_%S"))
         workbook = xlwt.Workbook()
         bold = xlwt.easyxf("font: bold on;")
 
-#         header_format_without_color = workbook.add_format({
-#             'border': 1,.xls
-#             'bold': True,
-#             'text_wrap': True,
-#             'valign': 'vcenter',
-#             'indent': 1,
-#         })
         quant_obj = self.env['stock.quant']
         products = self.env['product.product'].search([])
         company_id = self.env.user.company_id.id
@@ -45,7 +27,7 @@ class export_product_with_inventory_file(models.TransientModel):
         #worksheet = workbook.add_worksheet('Products')
         worksheet = workbook.add_sheet('Products')
 
-        headers = ['id','categ_id/name','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
+        headers = ['id','categ_id/name','pos_categ_id/name','available_in_pos','name','barcode','default_code','unit_of_measurement','uom_po_id','weight','l10n_mx_edi_code_sat_id','supplier_taxes_id','taxes_id','type','route_ids/id','purchase_ok','sale_ok','standard_price','lst_price','seller_ids/name/name']
         warehouse_ids = []
         product_obj = self.env['product.product']
         product_ids = products.ids
@@ -82,6 +64,7 @@ class export_product_with_inventory_file(models.TransientModel):
                     yield rec
                 rs.invalidate_cache(ids=sub.ids)
         row_index = 1
+        pos_installed = hasattr(self.env['product.product'], 'available_in_pos')
         for product in splittor(products):
             if product.route_ids:
                 xml_ids = [xid for _, xid in self.__ensure_xml_id_custom(product.route_ids)]
@@ -108,8 +91,20 @@ class export_product_with_inventory_file(models.TransientModel):
             i=0
             worksheet.write(row_index, i, product_xml_ids.get(product.id))
             i +=1
-            worksheet.write(row_index, i, product.categ_id.name)
+            worksheet.write(row_index, i, product.categ_id.complete_name)
             i +=1
+            #########
+            if pos_installed:
+                worksheet.write(row_index, i, product.pos_categ_id.complete_categ_name or None)
+                i +=1
+                worksheet.write(row_index, i, 1 if product.available_in_pos else 0)
+                i +=1
+            else:
+                worksheet.write(row_index, i, None)
+                i +=1
+                worksheet.write(row_index, i, None)
+                i +=1
+            #########
             worksheet.write(row_index, i, product.name)
             i +=1
             worksheet.write(row_index, i, product.barcode or '')
