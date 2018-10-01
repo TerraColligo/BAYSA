@@ -14,6 +14,7 @@
     'data': [
         'view/sale.xml',
         'view/purchase.xml',
+        'view/product.xml',
         'view/manufacture.xml',
 
     ],
