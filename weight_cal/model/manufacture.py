@@ -5,11 +5,7 @@ class MrpBomLine(models.Model):
 
     _inherit='mrp.bom.line'
 
-    weight_bom=fields.Float('Weight')
-
-    @api.onchange('product_id')
-    def _onchange_product_id_inherit_bom(self):
-        self.weight_bom = self.product_id.weight
+    weight_bom=fields.Float('Unit Weight',related='product_id.weight')
 
 
 class MrpBom(models.Model):
@@ -44,3 +40,10 @@ class ManufactureProduction(models.Model):
 
 
     total_weight_mo_order=fields.Float('Total Weight',related='bom_id.total_weight_bo')
+
+
+class StockMove(models.Model):
+
+    _inherit='stock.move'
+
+    weight_mo=fields.Float('Unit Weight',related='product_id.weight')
