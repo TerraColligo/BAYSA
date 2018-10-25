@@ -15,7 +15,7 @@ class SaleOrder(models.Model):
     _inherit='sale.order'
 
 
-    total_weight = fields.Monetary(string='Total Weight', store=True, readonly=True, compute='_amount_all_weight',
+    total_weight = fields.Float(string='Total Weight', store=True, readonly=True, compute='_amount_all_weight',
                                      track_visibility='onchange')
 
     @api.depends('order_line.weight_new')

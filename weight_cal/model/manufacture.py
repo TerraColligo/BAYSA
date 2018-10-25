@@ -12,7 +12,7 @@ class MrpBom(models.Model):
 
     _inherit='mrp.bom'
 
-    total_weight_bom = fields.Monetary(string='Total Weight', store=True, readonly=True, compute='_amount_all_weight_bom',
+    total_weight_bom = fields.Float(string='Total Weight', store=True, readonly=True, compute='_amount_all_weight_bom',
 
                                        track_visibility='onchange', currency_field='company_currency_id')
     total_weight_bo=fields.Float('total weight')

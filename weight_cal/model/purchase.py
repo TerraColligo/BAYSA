@@ -13,7 +13,7 @@ class PurchaseOrder(models.Model):
 
     _inherit='purchase.order'
 
-    total_weight_po=fields.Monetary(string='Total Weight', store=True, readonly=True, compute='_amount_all_weight_po',
+    total_weight_po=fields.Float(string='Total Weight', store=True, readonly=True, compute='_amount_all_weight_po',
                                      track_visibility='onchange')
 
     @api.depends('order_line.weight_po')
